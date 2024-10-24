@@ -1,0 +1,2 @@
+prefix   = "demo"
+location = "westus"
