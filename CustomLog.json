@@ -1,0 +1,305 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "tags": {
+            "type": "object",
+            "defaultValue": {
+            },
+            "metadata": {
+                "description": "Tags of the resource."
+            }
+        }
+    },
+    "variables": {
+        "rgName": "[resourceGroup().name]",
+        "location": "[resourceGroup().location]",
+        "logAnalyticsWorkspaceName": "[tolower(replace(variables('rgName'),'rg','la'))]",
+        "AzMonDCE": "AmaaDCE",
+        "AzMonPerfDcr": "AmaaPerfDataDCR",
+        "AzMonSecDcr": "AmaaSecDataDCR"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Insights/dataCollectionEndpoints",
+            "name": "[variables('AzMonDCE')]",
+            "tags": "[parameters('tags')]",
+            "location": "[variables('location')]",
+            "apiVersion": "2021-04-01",
+            "properties": {
+                "networkAcls": {
+                "publicNetworkAccess": "Enabled"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Insights/dataCollectionRules",
+            "name": "[variables('AzMonPerfDcr')]",
+            "tags": "[parameters('tags')]",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "[variables('AzMonDCE')]"
+            ],
+            "apiVersion": "2021-09-01-preview",
+            "properties": {
+                "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', variables('AzMonDCE'))]",
+                "streamDeclarations": {
+                    "Custom-AmaaPerfRawData": {
+                        "columns": [
+                            {
+                                "name": "DateValue",
+                                "type": "datetime",
+                                "description": "DateValue"
+                            },
+                            {
+                                "name": "Computer",
+                                "type": "string",
+                                "description": "Computer"
+                            },
+                            {
+                                "name": "ObjectName",
+                                "type": "string",
+                                "description": "ObjectName"
+                            },
+                            {
+                                "name": "CounterName",
+                                "type": "string",
+                                "description": "CounterName"
+                            },
+                            {
+                                "name": "InstanceName",
+                                "type": "string",
+                                "description": "InstanceName"
+                            },
+                            {
+                                "name": "CounterValue",
+                                "type": "string",
+                                "description": "CounterValue"
+                            }
+                        ]
+                    }
+                },
+                "destinations": {
+                    "logAnalytics": [
+                        {
+                            "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName'))]",
+                            "name": "[variables('logAnalyticsWorkspaceName')]"
+                        }
+                    ]
+                },
+                "dataFlows": [
+                    {
+                        "streams": [
+                            "Custom-AmaaPerfRawData"
+                        ],
+                        "destinations": [
+                            "[variables('logAnalyticsWorkspaceName')]"
+                        ],
+                        "transformKql": "source | project TimeGenerated = DateValue, DateValue, Computer, ObjectName, CounterName, InstanceName, CounterValue=toreal(CounterValue)",
+                        "outputStream": "Custom-AmaaLab_Perf_CL"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Insights/dataCollectionRules",
+            "name": "[variables('AzMonSecDcr')]",
+            "tags": "[parameters('tags')]",
+            "location": "[variables('location')]",
+            "dependsOn": [
+                "[variables('AzMonDCE')]"
+            ],
+            "apiVersion": "2021-09-01-preview",
+            "properties": {
+                "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', variables('AzMonDCE'))]",
+                "streamDeclarations": {
+                    "Custom-AmaaSecurityRawData": {
+                        "columns": [
+                            {
+                                "name": "DateValue",
+                                "type": "datetime",
+                                "description": "DateValue"
+                            },
+                            {
+                                "name": "Account",
+                                "type": "string",
+                                "description": "Account"
+                            },
+                            {
+                                "name": "AccountType",
+                                "type": "string",
+                                "description": "AccountType"
+                            },
+                            {
+                                "name": "Computer",
+                                "type": "string",
+                                "description": "Computer"
+                            },
+                            {
+                                "name": "EventSourceName",
+                                "type": "string",
+                                "description": "EventSourceName"
+                            },
+                            {
+                                "name": "Channel",
+                                "type": "string",
+                                "description": "Channel"
+                            },
+                            {
+                                "name": "Task",
+                                "type": "string",
+                                "description": "Task"
+                            },
+                            {
+                                "name": "Level",
+                                "type": "string",
+                                "description": "Level"
+                            },
+                            {
+                                "name": "EventData",
+                                "type": "string",
+                                "description": "EventData"
+                            },
+                            {
+                                "name": "EventID",
+                                "type": "string",
+                                "description": "EventID"
+                            },
+                            {
+                                "name": "Activity",
+                                "type": "string",
+                                "description": "Activity"
+                            },
+                            {
+                                "name": "AccessList",
+                                "type": "string",
+                                "description": "AccessList"
+                            },
+                            {
+                                "name": "AccessMask",
+                                "type": "string",
+                                "description": "AccessMask"
+                            },
+                            {
+                                "name": "AccountExpires",
+                                "type": "string",
+                                "description": "AccountExpires"
+                            },
+                            {
+                                "name": "AllowedToDelegateTo",
+                                "type": "string",
+                                "description": "AllowedToDelegateTo"
+                            },
+                            {
+                                "name": "AuthenticationPackageName",
+                                "type": "string",
+                                "description": "AuthenticationPackageName"
+                            },
+                            {
+                                "name": "CallerProcessId",
+                                "type": "string",
+                                "description": "CallerProcessId"
+                            },
+                            {
+                                "name": "CallerProcessName",
+                                "type": "string",
+                                "description": "CallerProcessName"
+                            },
+                            {
+                                "name": "DisplayName",
+                                "type": "string",
+                                "description": "DisplayName"
+                            },
+                            {
+                                "name": "ElevatedToken",
+                                "type": "string",
+                                "description": "ElevatedToken"
+                            }
+                        ]
+                    }
+                },
+                "destinations": {
+                    "logAnalytics": [
+                        {
+                            "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName'))]",
+                            "name": "[variables('logAnalyticsWorkspaceName')]"
+                        }
+                    ]
+                },
+                "dataFlows": [
+                    {
+                        "streams": [
+                            "Custom-AmaaSecurityRawData"
+                        ],
+                        "destinations": [
+                            "[variables('logAnalyticsWorkspaceName')]"
+                        ],
+                        "transformKql": "source | project TimeGenerated = DateValue, DateValue, Account, AccountType, Computer, EventSourceName, Channel, Task=toint(Task), Level, EventData, EventID=toint(EventID), Activity, AccessList, AccessMask, AccountExpires, AllowedToDelegateTo, AuthenticationPackageName, CallerProcessId, CallerProcessName, DisplayName, ElevatedToken",
+                        "outputStream": "Custom-AmaaLab_Security_CL"
+                    }
+                ]
+            }
+        }
+    ],
+    "functions": [
+    ],
+    "outputs": {
+        "resourceGroupName": {
+            "type": "string",
+            "value": "[resourceGroup().name]",
+            "metadata": {
+                "description": "The Resource Group log analytics was deployed to."
+            }
+        },
+        "resourceGroupLocation": {
+            "type": "string",
+            "value": "[resourceGroup().location]",
+            "metadata": {
+                "description": "The Resource Group log analytics was deployed to."
+            }
+        },
+        "resourceGroupId": {
+            "type": "string",
+            "value": "[resourceGroup().id]",
+            "metadata": {
+                "description": "The Resource Group log analytics was deployed to."
+            }
+        },
+        "logAnalyticsWorkspaceResourceId": {
+            "type": "string",
+            "value": "[resourceId('Microsoft.OperationalInsights/workspaces/', variables('logAnalyticsWorkspaceName'))]",
+            "metadata": {
+                "description": "The Resource Id of the Log Analytics workspace deployed."
+            }
+        },
+        "logAnalyticsWorkspaceName": {
+            "type": "string",
+            "value": "[variables('logAnalyticsWorkspaceName')]",
+            "metadata": {
+                "description": "The Name of the Log Analytics workspace deployed."
+            }
+        },
+        "AzMonDCE": {
+            "type": "string",
+            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', variables('AzMonDCE')), '2021-04-01').logsIngestion.endpoint]"
+        },
+        "AmaaPerfDataDCRresourceId": {
+            "type": "string",
+            "value": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AzMonPerfDcr'))]"
+        },
+        "AmaaSecDataDCRresourceId": {
+            "type": "string",
+            "value": "[resourceId('Microsoft.Insights/dataCollectionRules', variables('AzMonSecDcr'))]"
+        },
+        "AmaaPerfDataDCRImmutableId":
+        {
+            "type": "string",
+            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', variables('AzMonPerfDcr')), '2021-04-01').immutableId]"
+        },
+        "AmaaSecDataDCRImmutableId":
+        {
+            "type": "string",
+            "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', variables('AzMonSecDcr')), '2021-04-01').immutableId]"
+        }
+    }
+}

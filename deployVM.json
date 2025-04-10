@@ -1,0 +1,364 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "NetworkSecurityGroupRules": {
+      "type": "array"
+    },
+    "adminUsername": {
+      "type": "string"
+    },
+    "adminPassword": {
+      "type": "secureString"
+    },
+    "vmSize": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {
+      },
+      "metadata": {
+        "description": "Optional. Tags of the resource."
+      }
+    },
+    "patchMode": {
+      "type": "string",
+      "defaultValue": "Manual"
+    },
+    "enableHotpatching": {
+      "type": "bool",
+      "defaultValue": false
+    }
+  },
+  "variables": {
+    "location": "[resourceGroup().location]",
+    "rgName": "[resourceGroup().name]",
+    "vNetName": "[concat('vNet-', variables('rgName'))]",
+    "vnetId": "[resourceId(resourceGroup().name,'Microsoft.Network/virtualNetworks', variables('vNetName'))]",
+    "subnetRef": "[concat(variables('vnetId'), '/subnets/default')]",
+    "vmCount": 2,
+    "vmNamePrefix": "vm-AmAa-0"
+  },
+  "resources": [
+    // MARK: networkSecurityGroups
+    {
+      "name": "[concat('nsg-', variables('vNetName'))]",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2020-04-01",
+      "location": "[variables('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "securityRules": "[parameters('NetworkSecurityGroupRules')]"
+      }
+    },
+    // MARK: virtualNetwork
+    {
+      "name": "[variables('vNetName')]",
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2020-04-01",
+      "location": "[variables('location')]",
+      "tags": "[parameters('tags')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkSecurityGroups', concat('nsg-', variables('vNetName')))]"
+      ],
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "192.168.0.0/24"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "default",
+            "properties": {
+              "addressPrefix": "192.168.0.0/24",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', concat('nsg-', variables('vNetName')))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    // MARK: publicIpAddresses
+    {
+      "Copy": {
+        "name": "publicIpCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "name": "[concat('pip-', variables('vmNamePrefix'), copyIndex())]",
+      "type": "Microsoft.Network/publicIpAddresses",
+      "apiVersion": "2020-04-01",
+      "location": "[variables('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "publicIpAllocationMethod": "Dynamic"
+      },
+      "sku": {
+        "name": "Basic"
+      }
+    },
+    // MARK: networkInterfaces
+    {
+      "Copy": {
+        "name": "networkInterfaceCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "name": "[concat('nic-', variables('vmNamePrefix'), copyIndex())]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2020-04-01",
+      "location": "[variables('location')]",
+      "tags": "[parameters('tags')]",
+      "dependsOn": [
+        "[concat('pip-', variables('vmNamePrefix'), copyIndex())]",
+        "[variables('vNetName')]"
+      ],
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "[concat(variables('vmNamePrefix'), copyIndex(), '-ipconfig')]",
+            "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+            "properties": {
+              "subnet": {
+                "id": "[variables('subnetRef')]"
+              },
+              "privateIPAllocationMethod": "Static",
+              "privateIPAddress": "[concat('192.168.0.10', copyIndex())]",
+              "publicIpAddress": {
+                "id": "[resourceId(resourceGroup().name, 'Microsoft.Network/publicIpAddresses', concat('pip-', variables('vmNamePrefix'), copyIndex()))]"
+              }
+            }
+          }
+        ],
+        "nicType": "Standard"
+      }
+    },
+    // MARK: virtualMachines
+    {
+      "Copy": {
+        "name": "virtualMachineCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "name": "[concat(variables('vmNamePrefix'), copyIndex())]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2021-03-01",
+      "location": "[variables('location')]",
+      "tags": "[parameters('tags')]",
+      "dependsOn": [
+        "[concat('nic-', variables('vmNamePrefix'), copyIndex())]"
+      ],
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[parameters('vmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[concat(variables('vmNamePrefix'), copyIndex())]",
+          "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
+          "windowsConfiguration": {
+            "enableAutomaticUpdates": false,
+            "provisionVmAgent": true,
+            "patchSettings": {
+              "enableHotpatching": "[parameters('enableHotpatching')]",
+              "patchMode": "[parameters('patchMode')]"
+            }
+          }
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "MicrosoftWindowsServer",
+            "offer": "WindowsServer",
+            "sku": "2019-Datacenter",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "[concat(variables('vmNamePrefix'), copyIndex(),'_OSDisk')]",
+            "caching": "ReadOnly",
+            "createOption": "FromImage",
+            "managedDisk": {
+              "storageAccountType": "StandardSSD_LRS"
+            }
+          },
+          "dataDisks": [
+            {
+              "name": "[concat(variables('vmNamePrefix'), copyIndex(), '_DataDisk')]",
+              "caching": "ReadWrite",
+              "createOption": "Empty",
+              "diskSizeGB": 20,
+              "managedDisk": {
+                "storageAccountType": "StandardSSD_LRS"
+              },
+              "lun": 0
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', concat('nic-', variables('vmNamePrefix'), copyIndex()))]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true
+          }
+        }
+      }
+    },
+    // MARK: Extensions
+    {
+      "Copy": {
+        "name": "amaExtensionCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "apiVersion": "2021-11-01",
+      "name": "[format('{0}/AzureMonitorWindowsAgent', concat(variables('vmNamePrefix'), copyIndex()))]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat(variables('vmNamePrefix'), copyIndex())]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Monitor",
+        "type": "AzureMonitorWindowsAgent",
+        "typeHandlerVersion": "1.0",
+        "autoUpgradeMinorVersion": true,
+        "enableAutomaticUpgrade": true
+      }
+    },
+    {
+      "Copy": {
+        "name": "depeExtensionCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "apiVersion": "2021-11-01",
+      "name": "[format('{0}/DependencyAgentWindows', concat(variables('vmNamePrefix'), copyIndex()))]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat(variables('vmNamePrefix'), copyIndex())]",
+        "AzureMonitorWindowsAgent"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Monitoring.DependencyAgent",
+        "type": "DependencyAgentWindows",
+        "typeHandlerVersion": "9.10",
+        "autoUpgradeMinorVersion": true,
+        "enableAutomaticUpgrade": true,
+        "settings": {
+          "enableAMA": "true"
+        }
+      }
+    },
+    {
+      "Copy": {
+        "name": "avExtensionCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[format('{0}/antimalware', concat(variables('vmNamePrefix'), copyIndex()))]",
+      "apiVersion": "2019-07-01",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat(variables('vmNamePrefix'), copyIndex())]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Azure.Security",
+        "type": "IaaSAntimalware",
+        "typeHandlerVersion": "1.3",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "AntimalwareEnabled": true,
+          "Exclusions": {
+            "Extensions": ".dit;.chk;.log;.edb;.jrs;.ldf;.mdf",
+            "Processes": "mssence.svc"
+          },
+          "RealtimeProtectionEnabled": "true",
+          "ScheduledScanSettings": {
+            "isEnabled": "true",
+            "scanType": "Quick",
+            "day": "7",
+            "time": "120"
+          }
+        },
+        "protectedSettings": null
+      }
+    },
+    // MARK: dataCollectionRuleAssociations
+    {
+      "Copy": {
+        "name": "vmiDcrAssociationCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "type": "Microsoft.Compute/virtualMachines/providers/dataCollectionRuleAssociations",
+      "apiVersion": "2021-09-01-preview",
+      "name": "[concat(variables('vmNamePrefix'), copyIndex(),'/Microsoft.Insights/','-AMAA-VMInsights-DCR-association')]",
+      "dependsOn": [
+        "[concat(variables('vmNamePrefix'), copyIndex())]",
+        "AzureMonitorWindowsAgent"
+      ],
+      "properties": {
+        "dataCollectionRuleId": "[resourceId('Microsoft.Insights/dataCollectionRules','MSVMI-AMAA-VMInsights-DCR')]"
+      }
+    },
+    {
+      "Copy": {
+        "name": "windowsEventLogDcrAssociationCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "type": "Microsoft.Compute/virtualMachines/providers/dataCollectionRuleAssociations",
+      "apiVersion": "2021-09-01-preview",
+      "name": "[concat(variables('vmNamePrefix'), copyIndex(),'/Microsoft.Insights/','-AMAA-WindowsEventLogs-DCR-association')]",
+      "dependsOn": [
+        "[concat(variables('vmNamePrefix'), copyIndex())]",
+        "AzureMonitorWindowsAgent"
+      ],
+      "properties": {
+        "dataCollectionRuleId": "[resourceId('Microsoft.Insights/dataCollectionRules','AMAA-WindowsEventLogs-DCR')]"
+      }
+    },
+    {
+      "Copy": {
+        "name": "windowsPerfDcrAssociationCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "type": "Microsoft.Compute/virtualMachines/providers/dataCollectionRuleAssociations",
+      "apiVersion": "2021-09-01-preview",
+      "name": "[concat(variables('vmNamePrefix'), copyIndex(),'/Microsoft.Insights/','-AMAA-WindowsPerfCounters-DCR-association')]",
+      "dependsOn": [
+        "[concat(variables('vmNamePrefix'), copyIndex())]",
+        "AzureMonitorWindowsAgent"
+      ],
+      "properties": {
+        "dataCollectionRuleId": "[resourceId('Microsoft.Insights/dataCollectionRules','AMAA-WindowsPerfCounters-DCR')]"
+      }
+    },
+    {
+      "Copy": {
+        "name": "windowsSecurityLogDcrAssociationCopy",
+        "count": "[variables('vmCount')]"
+      },
+      "type": "Microsoft.Compute/virtualMachines/providers/dataCollectionRuleAssociations",
+      "apiVersion": "2021-09-01-preview",
+      "name": "[concat(variables('vmNamePrefix'), copyIndex(),'/Microsoft.Insights/','-AMAA-WindowsSecurityCommon-DCR-association')]",
+      "dependsOn": [
+        "[concat(variables('vmNamePrefix'), copyIndex())]",
+        "AzureMonitorWindowsAgent"
+      ],
+      "properties": {
+        "dataCollectionRuleId": "[resourceId('Microsoft.Insights/dataCollectionRules','AMAA-WindowsSecurityCommon-DCR')]"
+      }
+    }
+  ],
+  "outputs": {
+    "adminUsername": {
+      "type": "string",
+      "value": "[parameters('adminUsername')]"
+    }
+  }
+}
